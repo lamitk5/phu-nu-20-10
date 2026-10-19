@@ -563,14 +563,14 @@ class CanvasFlowerEngine {
   animate(now) {
     if (this.state === "hidden") return;
 
-    // Frame throttle: bỏ qua frame nếu chưa đủ budget thời gian (mobile ~30fps)
+    // Luôn schedule RAF một lần duy nhất ở đây - tránh nhân đôi vòng lặp
+    this.animId = requestAnimationFrame(this.animate);
+
+    // Frame throttle: skip render nếu chưa đủ thời gian (mobile ~30fps), RAF vẫn tiếp tục bình thường
     if (now - this._lastFrameTime < this._frameBudget) {
-      this.animId = requestAnimationFrame(this.animate);
       return;
     }
     this._lastFrameTime = now;
-
-    this.animId = requestAnimationFrame(this.animate);
 
     this.ctx.clearRect(0, 0, this.width, this.height);
 
