@@ -69,6 +69,59 @@ CHúc mi 20/10 luon rực rỡ nhé! ❤️`,
 };
 
 /* ============================================================================
+ * PROFILE HIỆU NĂNG THIẾT BỊ — ưu tiên Android / máy yếu
+ * ============================================================================ */
+const PERF = (() => {
+  const ua = navigator.userAgent || "";
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const touchMobile = (navigator.maxTouchPoints || 0) > 1 && Math.min(window.innerWidth, window.innerHeight) <= 900;
+  const isMobile = window.innerWidth <= 768 || isAndroid || isIOS || touchMobile;
+  const cores = navigator.hardwareConcurrency || (isAndroid ? 4 : 8);
+  const mem = navigator.deviceMemory || (isAndroid ? 4 : 8);
+  // Android mặc định coi là low-end trừ khi rõ ràng máy mạnh (8+ nhân & 6GB+)
+  const lowEnd = isAndroid
+    ? !(cores >= 8 && mem >= 6)
+    : (isMobile && (cores <= 4 || mem <= 4 || window.innerWidth <= 400));
+
+  return {
+    isAndroid,
+    isIOS,
+    isMobile,
+    lowEnd,
+    // Canvas Scene 1
+    flowerDpr: lowEnd ? 0.7 : (isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2)),
+    flowerOffscreen: lowEnd ? 112 : (isMobile ? 160 : 320),
+    flowerFpsMs: lowEnd ? 50 : (isMobile ? 33 : 16), // ~20 / 30 / 60
+    flowerCountTarget: lowEnd ? 22 : (isMobile ? 32 : 168),
+    flowerFadeMs: lowEnd ? 450 : (isMobile ? 650 : 1000),
+    flowerCoverageMs: lowEnd ? 1600 : (isMobile ? 2000 : 3500),
+    skipConfetti: lowEnd,
+    skipBouquet: lowEnd,
+    // Starfield
+    starCount: lowEnd ? 12 : (isMobile ? 28 : 120),
+    // Mosaic
+    mosaicThumb: lowEnd ? 48 : 64,
+    mosaicUseCssOnly: lowEnd,
+    // Three.js
+    threeAntialias: !isMobile,
+    threePixelRatio: lowEnd ? 0.75 : (isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2)),
+    threeFlowerPts: lowEnd ? 700 : (isMobile ? 1400 : 4000),
+    threeGalaxyPts: lowEnd ? 150 : (isMobile ? 280 : 800),
+    threeSparkles: lowEnd ? 30 : (isMobile ? 80 : 300),
+    threeSphereCards: lowEnd ? 12 : (isMobile ? 20 : 40),
+    threeDeferPhotos: lowEnd
+  };
+})();
+
+console.log("[PERF]", {
+  android: PERF.isAndroid,
+  mobile: PERF.isMobile,
+  lowEnd: PERF.lowEnd,
+  dpr: PERF.flowerDpr
+});
+
+/* ============================================================================
  * TRÌNH QUẢN LÝ ÂM THANH HYBRID (WEB AUDIO SYNTH + MP3 FALLBACK)
  * ============================================================================ */
 class RomanticAudioManager {
@@ -191,41 +244,69 @@ class StarfieldEngine {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
     if (!this.canvas) return;
-    this.ctx = this.canvas.getContext("2d");
+    this.ctx = this.canvas.getContext("2d", { alpha: true });
     this.stars = [];
-    this.isMobile = window.innerWidth <= 768;
-    this.numStars = this.isMobile ? 40 : 120;
+    this.numStars = PERF.starCount;
     this.isRunning = true;
     this.animId = null;
+    this._lastFrame = 0;
+    this._frameBudget = PERF.lowEnd ? 66 : (PERF.isMobile ? 40 : 16);
+    // Low-end: vẽ 1 lần tĩnh, không RAF liên tục
+    this._staticOnly = PERF.lowEnd;
 
     this.resize();
     this.initStars();
     window.addEventListener("resize", () => this.resize());
-    this.animate();
+    if (this._staticOnly) {
+      this.paintOnce();
+    } else {
+      this.animate();
+    }
   }
 
   resize() {
-    this.isMobile = window.innerWidth <= 768;
-    this.numStars = this.isMobile ? 40 : 120;
-    this.width = this.canvas.width = window.innerWidth;
-    this.height = this.canvas.height = window.innerHeight;
-    if (this.stars.length !== this.numStars) {
-      this.initStars();
-    }
+    // Android: canvas sao bằng 0.5 CSS để giảm fill-rate
+    const scale = PERF.lowEnd ? 0.5 : 1;
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
+    this.canvas.width = Math.max(1, Math.floor(this.width * scale));
+    this.canvas.height = Math.max(1, Math.floor(this.height * scale));
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
+    this.numStars = PERF.starCount;
+    this.initStars();
+    if (this._staticOnly) this.paintOnce();
   }
 
   initStars() {
     this.stars = [];
+    const w = this.canvas.width;
+    const h = this.canvas.height;
     for (let i = 0; i < this.numStars; i++) {
       this.stars.push({
-        x: Math.random() * this.width,
-        y: Math.random() * this.height,
-        radius: Math.random() * 1.5 + 0.4,
-        alpha: Math.random() * 0.8 + 0.2,
-        speed: Math.random() * 0.02 + 0.005,
+        x: Math.random() * w,
+        y: Math.random() * h,
+        radius: Math.random() * 1.2 + 0.3,
+        alpha: Math.random() * 0.7 + 0.25,
+        speed: Math.random() * 0.015 + 0.004,
         color: Math.random() > 0.3 ? "#ffccd5" : "#ffffff"
       });
     }
+  }
+
+  paintOnce() {
+    if (!this.ctx) return;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    this.ctx.clearRect(0, 0, w, h);
+    for (const s of this.stars) {
+      this.ctx.beginPath();
+      this.ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+      this.ctx.fillStyle = s.color;
+      this.ctx.globalAlpha = s.alpha;
+      this.ctx.fill();
+    }
+    this.ctx.globalAlpha = 1;
   }
 
   pause() {
@@ -237,17 +318,24 @@ class StarfieldEngine {
   }
 
   resume() {
+    if (this._staticOnly) {
+      this.paintOnce();
+      return;
+    }
     if (this.isRunning) return;
     this.isRunning = true;
     this.animate();
   }
 
-  animate() {
-    if (!this.isRunning) return;
-    this.animId = requestAnimationFrame(() => this.animate());
+  animate(now = 0) {
+    if (!this.isRunning || this._staticOnly) return;
+    this.animId = requestAnimationFrame((t) => this.animate(t));
+    if (now - this._lastFrame < this._frameBudget) return;
+    this._lastFrame = now;
 
-    this.ctx.clearRect(0, 0, this.width, this.height);
-    const hasShadow = !this.isMobile;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    this.ctx.clearRect(0, 0, w, h);
 
     for (let s of this.stars) {
       s.alpha += s.speed;
@@ -256,12 +344,6 @@ class StarfieldEngine {
       this.ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
       this.ctx.fillStyle = s.color;
       this.ctx.globalAlpha = Math.max(0, Math.min(1, s.alpha));
-      if (hasShadow) {
-        this.ctx.shadowBlur = 4;
-        this.ctx.shadowColor = s.color;
-      } else {
-        this.ctx.shadowBlur = 0;
-      }
       this.ctx.fill();
     }
     this.ctx.globalAlpha = 1;
@@ -274,30 +356,30 @@ class StarfieldEngine {
 class CanvasFlowerEngine {
   constructor(canvasId, onFullCoverage) {
     this.canvas = document.getElementById(canvasId);
-    this.ctx = this.canvas ? this.canvas.getContext("2d") : null;
+    this.ctx = this.canvas
+      ? this.canvas.getContext("2d", { alpha: true, desynchronized: PERF.lowEnd })
+      : null;
     this.onFullCoverage = onFullCoverage;
 
     this.width = window.innerWidth;
     this.height = window.innerHeight;
-    this.isMobile = window.innerWidth <= 768;
-    // Mobile: pixel ratio cố định 1 để tiết kiệm GPU
-    this.dpr = this.isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    this.isMobile = PERF.isMobile;
+    this.dpr = PERF.flowerDpr;
 
     this.offscreenImages = [];
     this.imagesLoaded = false;
 
     this.bouquetRoses = [];
     this.explosionRoses = [];
-    this.state = "idle"; // "idle" | "exploding" | "fading" | "hidden"
+    this.state = "idle"; // "idle" | "exploding" | "fading" | "hidden" | "frozen"
     this.startTime = 0;
     this.fadeStartTime = 0;
-    // Mobile fade ngắn hơn để giải phóng GPU sớm trước khi Scene 2 chạy
-    this.fadeDuration = this.isMobile ? 700 : 1000;
+    this.fadeDuration = PERF.flowerFadeMs;
     this.animId = null;
 
-    // Frame-throttle: mobile giới hạn ~30 FPS để tiết kiệm GPU
     this._lastFrameTime = 0;
-    this._frameBudget = this.isMobile ? 32 : 16; // ms per frame (30fps / 60fps)
+    this._frameBudget = PERF.flowerFpsMs;
+    this._frozen = false;
 
     this.handleResize = this.handleResize.bind(this);
     this.animate = this.animate.bind(this);
@@ -311,20 +393,23 @@ class CanvasFlowerEngine {
     if (!this.canvas) return;
     this.width = window.innerWidth;
     this.height = window.innerHeight;
-    this.canvas.width = Math.floor(this.width * this.dpr);
-    this.canvas.height = Math.floor(this.height * this.dpr);
+    this.dpr = PERF.flowerDpr;
+    this.canvas.width = Math.max(1, Math.floor(this.width * this.dpr));
+    this.canvas.height = Math.max(1, Math.floor(this.height * this.dpr));
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     if (this.ctx) {
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.ctx.imageSmoothingEnabled = !PERF.lowEnd;
     }
   }
 
   handleResize() {
-    this.isMobile = window.innerWidth <= 768;
-    this._frameBudget = this.isMobile ? 32 : 16;
-    this.initCanvas();
+    this.isMobile = PERF.isMobile;
+    this._frameBudget = PERF.flowerFpsMs;
+    // Không resize buffer giữa lúc nổ hoa — tránh spike Android
     if (this.state === "idle") {
+      this.initCanvas();
       this.initBouquet();
     }
   }
@@ -336,26 +421,23 @@ class CanvasFlowerEngine {
 
     list.forEach((src, idx) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
+      img.decoding = "async";
       img.src = src;
       img.onload = () => {
         if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) return;
 
-        // Mobile: 200px offscreen đủ cho hiển thị 150px-260px, tiết kiệm VRAM 4x so với 400px
-        const size = this.isMobile ? 200 : 320;
+        const size = PERF.flowerOffscreen;
         const offCanvas = document.createElement("canvas");
         offCanvas.width = size;
         offCanvas.height = size;
-        // willReadFrequently: false vì chúng ta chỉ vẽ không đọc — tối ưu GPU raster path
-        const offCtx = offCanvas.getContext("2d", { willReadFrequently: false });
+        const offCtx = offCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
 
-        // Đồng bộ tone màu ấm áp tươi tắn
-        if ("filter" in offCtx) {
+        // Low-end: bỏ filter/shadow — rất đắt trên Android GPU
+        if (!PERF.lowEnd && "filter" in offCtx) {
           offCtx.filter = "brightness(1.05) saturate(1.1)";
         }
 
-        // object-fit: contain giữ chuẩn tỷ lệ cánh hoa gốc, không méo hình
-        const pad = this.isMobile ? 6 : 10;
+        const pad = PERF.lowEnd ? 4 : (this.isMobile ? 6 : 10);
         const maxDraw = size - pad * 2;
         const aspect = img.naturalWidth / img.naturalHeight;
         let dw, dh;
@@ -369,17 +451,19 @@ class CanvasFlowerEngine {
         const dx = (size - dw) / 2;
         const dy = (size - dh) / 2;
 
-        // Đổ bóng nhẹ - KHÔNG clip tròn, KHÔNG lẹm cánh
-        offCtx.shadowColor = "rgba(0, 0, 0, 0.12)";
-        offCtx.shadowBlur = this.isMobile ? 6 : 10;
-        offCtx.shadowOffsetY = 3;
+        if (!PERF.lowEnd) {
+          offCtx.shadowColor = "rgba(0, 0, 0, 0.12)";
+          offCtx.shadowBlur = this.isMobile ? 4 : 10;
+          offCtx.shadowOffsetY = 2;
+        }
         offCtx.drawImage(img, dx, dy, dw, dh);
 
         this.offscreenImages[idx] = offCanvas;
         loadedCount++;
         if (loadedCount === list.length) {
           this.imagesLoaded = true;
-          this.startLoop();
+          // Idle: không chạy RAF — chỉ start khi nổ hoa
+          if (this.state === "exploding") this.startLoop();
         }
       };
       img.onerror = () => {
@@ -387,30 +471,30 @@ class CanvasFlowerEngine {
         loadedCount++;
         if (loadedCount === list.length) {
           this.imagesLoaded = true;
-          this.startLoop();
+          if (this.state === "exploding") this.startLoop();
         }
       };
     });
   }
 
-  // 1. Trạng thái ban đầu: Cụm hoa trung tâm tự nhiên, cánh hoa đầy đặn
+  // 1. Cụm hoa tâm — bỏ hẳn trên Android low-end
   initBouquet() {
     this.bouquetRoses = [];
+    if (PERF.skipBouquet) return;
+
     const cx = this.width / 2;
     const cy = this.height / 2;
-
-    // Mobile: chỉ giữ 5 bông bouquet tâm (được che kín ngay bởi explosion roses)
     const rings = this.isMobile
-      ? [{ count: 2, maxR: 0 }, { count: 3, maxR: 45 }]
+      ? [{ count: 2, maxR: 0 }, { count: 2, maxR: 40 }]
       : [{ count: 4, maxR: 0 }, { count: 6, maxR: 60 }, { count: 8, maxR: 100 }];
 
     rings.forEach(({ count, maxR }) => {
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
         const r = Math.random() * maxR;
-        const size = this.isMobile ? 120 + Math.random() * 30 : 155 + Math.random() * 30;
+        const size = this.isMobile ? 110 + Math.random() * 25 : 155 + Math.random() * 30;
         this.bouquetRoses.push({
-          imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
+          imgIdx: Math.floor(Math.random() * Math.max(1, this.offscreenImages.length)),
           x: cx + Math.cos(angle) * r,
           y: cy + Math.sin(angle) * r,
           size,
@@ -421,50 +505,64 @@ class CanvasFlowerEngine {
     });
   }
 
-  // 2. MẬT ĐỘ VÀ KÍCH THƯỚC PHỦ KÍN 100% MÀN HÌNH
+  // 2. Mật độ phủ màn hình — Android ~22 bông, mobile ~32, desktop đầy đủ
   initExplosion() {
     this.explosionRoses = [];
-    // Canvas tĩnh chứa hoa đã nở xong: chỉ drawImage 1 lần thay vì N lần/frame
     this._bakedCanvas = document.createElement("canvas");
     this._bakedCanvas.width = this.canvas.width;
     this._bakedCanvas.height = this.canvas.height;
-    this._bakedCtx = this._bakedCanvas.getContext("2d", { willReadFrequently: false });
-    this._bakedCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this._bakedCtx = this._bakedCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
+    if (this._bakedCtx) {
+      this._bakedCtx.imageSmoothingEnabled = !PERF.lowEnd;
+      // Vẽ theo CSS pixel space (giống main ctx sau setTransform dpr)
+      this._bakedCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    }
     this._allSettled = false;
+    this._frozen = false;
 
     const cx = this.width / 2;
     const cy = this.height / 2;
-    const maxR = Math.hypot(cx, cy) * 1.08;
+    const maxR = Math.hypot(cx, cy) * 1.05;
 
-    const desktopRings = [
-      { count: 1,  rFrac: 0.00 },
-      { count: 6,  rFrac: 0.09 },
-      { count: 11, rFrac: 0.18 },
-      { count: 16, rFrac: 0.28 },
-      { count: 21, rFrac: 0.39 },
-      { count: 26, rFrac: 0.51 },
-      { count: 30, rFrac: 0.64 },
-      { count: 32, rFrac: 0.77 },
-      { count: 25, rFrac: 1.02 }
-    ];
+    let rings;
+    if (PERF.lowEnd) {
+      // ~22 bông — phủ kín nhờ kích thước lớn hơn
+      rings = [
+        { count: 1, rFrac: 0.00 },
+        { count: 4, rFrac: 0.22 },
+        { count: 6, rFrac: 0.45 },
+        { count: 6, rFrac: 0.70 },
+        { count: 5, rFrac: 1.00 }
+      ];
+    } else if (this.isMobile) {
+      rings = [
+        { count: 1, rFrac: 0.00 },
+        { count: 4, rFrac: 0.16 },
+        { count: 6, rFrac: 0.34 },
+        { count: 8, rFrac: 0.55 },
+        { count: 7, rFrac: 0.78 },
+        { count: 6, rFrac: 1.00 }
+      ];
+    } else {
+      rings = [
+        { count: 1,  rFrac: 0.00 },
+        { count: 6,  rFrac: 0.09 },
+        { count: 11, rFrac: 0.18 },
+        { count: 16, rFrac: 0.28 },
+        { count: 21, rFrac: 0.39 },
+        { count: 26, rFrac: 0.51 },
+        { count: 30, rFrac: 0.64 },
+        { count: 32, rFrac: 0.77 },
+        { count: 25, rFrac: 1.02 }
+      ];
+    }
 
-    // Mobile: 42 bông (giảm từ 62) — vẫn phủ kín, nhưng nhanh hơn đáng kể
-    const mobileRings = [
-      { count: 1,  rFrac: 0.00 },
-      { count: 4,  rFrac: 0.15 },
-      { count: 7,  rFrac: 0.30 },
-      { count: 10, rFrac: 0.47 },
-      { count: 11, rFrac: 0.65 },
-      { count: 9,  rFrac: 1.00 }
-    ];
-
-    const rings = this.isMobile ? mobileRings : desktopRings;
     const totalRings = rings.length;
-    const totalBloomMs = this.isMobile ? 1800 : 2350;
+    const totalBloomMs = PERF.lowEnd ? 1200 : (this.isMobile ? 1600 : 2350);
 
     rings.forEach((ring, ringIdx) => {
       const ringOffsetAngle = Math.random() * Math.PI * 2;
-      const ringDelay = (ringIdx / (totalRings - 1)) * totalBloomMs;
+      const ringDelay = totalRings <= 1 ? 0 : (ringIdx / (totalRings - 1)) * totalBloomMs;
 
       for (let j = 0; j < ring.count; j++) {
         const angle = ring.count === 1
@@ -473,44 +571,68 @@ class CanvasFlowerEngine {
 
         const r = ring.rFrac === 0
           ? 0
-          : ring.rFrac * maxR + (Math.random() - 0.5) * (this.isMobile ? 14 : 20);
+          : ring.rFrac * maxR + (Math.random() - 0.5) * (PERF.lowEnd ? 10 : 18);
 
-        const size = this.isMobile
-          ? Math.floor(155 + Math.random() * 80)
-          : Math.floor(180 + Math.random() * 180);
+        // Low-end: bông to hơn để ít bông vẫn phủ kín
+        const size = PERF.lowEnd
+          ? Math.floor(170 + Math.random() * 70)
+          : this.isMobile
+            ? Math.floor(145 + Math.random() * 70)
+            : Math.floor(180 + Math.random() * 180);
 
         const rot = Math.random() * Math.PI * 2;
-        const duration = this.isMobile ? 560 + Math.random() * 140 : 850 + Math.random() * 150;
-        const flowerDelay = Math.max(0, ringDelay + (Math.random() - 0.5) * (this.isMobile ? 70 : 140));
+        const duration = PERF.lowEnd
+          ? 420 + Math.random() * 100
+          : this.isMobile
+            ? 520 + Math.random() * 120
+            : 850 + Math.random() * 150;
+        const flowerDelay = Math.max(0, ringDelay + (Math.random() - 0.5) * (PERF.lowEnd ? 40 : 100));
 
         this.explosionRoses.push({
-          imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
+          imgIdx: Math.floor(Math.random() * Math.max(1, this.offscreenImages.length)),
           x: cx + Math.cos(angle) * r,
           y: cy + Math.sin(angle) * r,
           targetSize: size,
           rot,
-          rotRate: (Math.random() - 0.5) * 0.00012, // pre-baked: rotSpeed * 0.04
+          rotRate: PERF.lowEnd ? 0 : (Math.random() - 0.5) * 0.00012,
           delay: flowerDelay,
           duration,
-          settled: false  // trở thành true khi progress >= 1 và đã bake
+          settled: false
         });
       }
     });
   }
 
   startExplosion() {
-    if (this.state === "exploding" || this.state === "fading") return;
+    if (this.state === "exploding" || this.state === "fading" || this.state === "frozen") return;
     this.state = "exploding";
     this.startTime = performance.now();
     this.initBouquet();
     this.initExplosion();
     this.startLoop();
 
-    // Mobile nở nhanh hơn: onFullCoverage sau 2.4s (cũ 3.5s)
-    const coverageDelay = this.isMobile ? 2400 : 3500;
     setTimeout(() => {
       if (this.onFullCoverage) this.onFullCoverage();
-    }, coverageDelay);
+    }, PERF.flowerCoverageMs);
+  }
+
+  // Đóng băng khung hình khi hoa đã phủ kín — dừng RAF, tiết kiệm GPU Android
+  freezeFrame() {
+    if (this._frozen || !this._bakedCanvas || !this.ctx) return;
+    this._frozen = true;
+    this.state = "frozen";
+    if (this.animId) {
+      cancelAnimationFrame(this.animId);
+      this.animId = null;
+    }
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(this._bakedCanvas, 0, 0);
+    // Giải phóng baked ngay sau khi copy sang canvas chính
+    this._bakedCanvas.width = 1;
+    this._bakedCanvas.height = 1;
+    this._bakedCanvas = null;
+    this._bakedCtx = null;
   }
 
   // Bake nhanh mọi bông chưa settled trước khi fade (tránh vẽ O(N) mỗi frame lúc chuyển cảnh)
@@ -534,24 +656,27 @@ class CanvasFlowerEngine {
     if (this.state === "fading" || this.state === "hidden") return;
     this.state = "fading";
 
-    // Chốt khung hình tĩnh rồi dừng vòng lặp vẽ — không còn tranh CPU/GPU với Scene 2
-    this._forceBakeRemaining();
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = null;
     }
 
-    // Vẽ 1 lần cuối khung baked rồi bỏ baked canvas ngay — chỉ giữ 1 buffer trong lúc CSS fade
-    if (this.ctx && this._bakedCanvas) {
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      this.ctx.drawImage(this._bakedCanvas, 0, 0);
-      this._bakedCanvas.width = 1;
-      this._bakedCanvas.height = 1;
+    // Nếu chưa freeze: bake + vẽ 1 lần
+    if (this._bakedCtx) {
+      this._forceBakeRemaining();
+      if (this.ctx && this._bakedCanvas) {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.drawImage(this._bakedCanvas, 0, 0);
+      }
+      if (this._bakedCanvas) {
+        this._bakedCanvas.width = 1;
+        this._bakedCanvas.height = 1;
+      }
       this._bakedCanvas = null;
       this._bakedCtx = null;
     }
-    // Offscreen hoa cũng bỏ sớm — không cần nữa sau khi đã bake
+
     this.offscreenImages = [];
     this.bouquetRoses = [];
     this.explosionRoses = [];
@@ -596,6 +721,11 @@ class CanvasFlowerEngine {
     this._bakedCanvas = null;
     this._bakedCtx = null;
     this._allSettled = false;
+    this._frozen = false;
+    if (this.animId) {
+      cancelAnimationFrame(this.animId);
+      this.animId = null;
+    }
     if (this.canvas) {
       this.canvas.style.display = "block";
       this.canvas.style.opacity = "1";
@@ -604,13 +734,11 @@ class CanvasFlowerEngine {
     this.initCanvas();
     this.bouquetRoses = [];
     this.explosionRoses = [];
-    // Nạp lại ảnh hoa nếu đã dispose trước đó
+    // Nạp lại ảnh hoa nếu đã dispose — không start RAF khi idle
     if (!this.imagesLoaded || this.offscreenImages.length === 0) {
       this.offscreenImages = [];
       this.imagesLoaded = false;
       this.preloadImages();
-    } else {
-      this.startLoop();
     }
   }
 
@@ -634,34 +762,30 @@ class CanvasFlowerEngine {
   }
 
   animate(now) {
-    if (this.state === "hidden") return;
+    if (this.state === "hidden" || this.state === "frozen" || this.state === "fading") return;
+    if (!this.ctx) return;
 
-    // Luôn schedule RAF một lần duy nhất ở đây - tránh nhân đôi vòng lặp
     this.animId = requestAnimationFrame(this.animate);
 
-    // Frame throttle: skip render nếu chưa đủ thời gian (mobile ~30fps)
     if (now - this._lastFrameTime < this._frameBudget) return;
     this._lastFrameTime = now;
 
-    // Reset transform về gốc trước khi clearRect
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.ctx.clearRect(0, 0, this.width, this.height);
+    if (this.state === "idle") return;
 
-    if (this.state === "idle") {
-      return;
-
-    } else if (this.state === "exploding") {
+    if (this.state === "exploding") {
       const elapsed = now - this.startTime;
 
-      // Vẽ canvas tĩnh (hoa đã settled) 1 lần duy nhất — O(1) thay vì O(N)
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.ctx.clearRect(0, 0, this.width, this.height);
+
       if (this._bakedCanvas) {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.drawImage(this._bakedCanvas, 0, 0);
         this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       }
 
-      // Bouquet roses chỉ vẽ trong 1.5s đầu khi explosion chưa phủ kín
-      if (elapsed < 1500) {
+      // Bouquet chỉ vài trăm ms đầu (Android bỏ hẳn)
+      if (!PERF.skipBouquet && elapsed < 900) {
         for (const r of this.bouquetRoses) {
           const off = this.offscreenImages[r.imgIdx];
           if (!off) continue;
@@ -670,20 +794,15 @@ class CanvasFlowerEngine {
         }
       }
 
-      // Vẽ các bông đang hoạt động; bake bông đã nở xong vào canvas tĩnh
       let activeCount = 0;
       for (const r of this.explosionRoses) {
-        if (elapsed < r.delay) continue;
-
-        // Đã bake rồi thì bỏ qua (đã có trong _bakedCanvas)
-        if (r.settled) continue;
+        if (elapsed < r.delay || r.settled) continue;
 
         const progress = (elapsed - r.delay) / r.duration;
 
         if (progress >= 1) {
-          // Bake hoa này vào canvas tĩnh và đánh dấu settled
           const off = this.offscreenImages[r.imgIdx];
-          if (off) {
+          if (off && this._bakedCtx) {
             const finalRot = r.rot + r.rotRate * (r.delay + r.duration);
             this._drawFlower(this._bakedCtx, off, r.x, r.y, finalRot, r.targetSize);
           }
@@ -692,10 +811,15 @@ class CanvasFlowerEngine {
         }
 
         activeCount++;
-        // Easing cubic-bezier nảy nhẹ scale(0) -> scale(1)
         const p = Math.min(1, progress);
-        const c1 = 1.15, c3 = c1 + 1;
-        const scale = Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2));
+        // Low-end: ease tuyến tính rẻ hơn cubic
+        let scale;
+        if (PERF.lowEnd) {
+          scale = p;
+        } else {
+          const c1 = 1.15, c3 = c1 + 1;
+          scale = Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2));
+        }
         const curSize = r.targetSize * scale;
         if (curSize <= 0) continue;
 
@@ -704,16 +828,12 @@ class CanvasFlowerEngine {
         this._drawFlower(this.ctx, off, r.x, r.y, r.rot + r.rotRate * elapsed, curSize);
       }
 
-      // Khi tất cả đã settled, đánh dấu để fading chỉ cần 1 drawImage
-      if (!this._allSettled && activeCount === 0 && elapsed > 500) {
+      // Đủ hoa đã bake → đóng băng, dừng RAF hoàn toàn
+      if (!this._allSettled && activeCount === 0 && elapsed > 400) {
         this._allSettled = true;
+        this.freezeFrame();
       }
-
-      // Reset transform
-      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-
     }
-    // state === "fading": RAF đã dừng — fade bằng CSS opacity trong fadeOutToScene2
   }
 }
 
@@ -729,14 +849,54 @@ class Photo2010MosaicManager {
     this.calendarDaysBody = document.getElementById("calendarDaysBody");
     this.tiles = [];
     this.isAssembled = false;
+    this.thumbUrls = []; // Ảnh thu nhỏ cho mosaic — tránh decode JPG 400KB x 46 ô trên Android
 
     this.initCalendar();
     this.initGardenFlowers();
     this.computeMatrixPoints();
+    // Tạo tile ngay với URL gốc, rồi thay bằng thumbnail khi sẵn sàng
     this.createTiles();
     this.updateResponsiveScale();
+    this.prepareThumbnails().then(() => {
+      this.tiles.forEach((tile, idx) => {
+        const url = this.thumbUrls[idx % this.thumbUrls.length];
+        if (url) tile.style.backgroundImage = `url('${url}')`;
+      });
+    });
 
     window.addEventListener("resize", () => this.updateResponsiveScale());
+  }
+
+  // Tạo thumbnail ~48–64px từ mỗi ảnh — mosaic chỉ cần thế, tiết kiệm RAM decode Android
+  prepareThumbnails() {
+    const size = PERF.mosaicThumb;
+    const photos = CONFIG.photos;
+    const jobs = photos.map((src, idx) => new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = size;
+          c.height = size;
+          const ctx = c.getContext("2d");
+          const scale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+          const dw = img.naturalWidth * scale;
+          const dh = img.naturalHeight * scale;
+          ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+          this.thumbUrls[idx] = c.toDataURL("image/jpeg", 0.72);
+        } catch (e) {
+          this.thumbUrls[idx] = src;
+        }
+        resolve();
+      };
+      img.onerror = () => {
+        this.thumbUrls[idx] = src;
+        resolve();
+      };
+      img.src = src;
+    }));
+    return Promise.all(jobs);
   }
 
   updateResponsiveScale() {
@@ -788,9 +948,16 @@ class Photo2010MosaicManager {
 
   initGardenFlowers() {
     if (!this.swayingGarden) return;
+    // Android: bỏ SVG garden (20 node animate) — chỉ màu nền nhẹ
+    if (PERF.lowEnd) {
+      this.swayingGarden.innerHTML = "";
+      this.swayingGarden.style.display = "none";
+      return;
+    }
     const colors = ["#ff4d79", "#f59e0b", "#ec4899", "#8b5cf6", "#10b981", "#fb7185"];
+    const count = PERF.isMobile ? 8 : 20;
     let html = "";
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < count; i++) {
       const color = colors[i % colors.length];
       const h = Math.floor(Math.random() * 12 + 16);
       html += `
@@ -861,105 +1028,107 @@ class Photo2010MosaicManager {
     const stepY = 28;
     const startX = 2;
     const startY = 2;
-    const isMobile = window.innerWidth <= 768;
-    // Mobile: bay gần hơn để GPU composite nhẹ hơn
-    const scatterX = isMobile ? 220 : 360;
-    const scatterY = isMobile ? 160 : 260;
+    const scatterX = PERF.lowEnd ? 120 : (PERF.isMobile ? 200 : 360);
+    const scatterY = PERF.lowEnd ? 80 : (PERF.isMobile ? 140 : 260);
+    const frag = document.createDocumentFragment();
 
     this.matrixPoints.forEach((pt, idx) => {
       const tile = document.createElement("div");
       tile.className = "mosaic-2010-tile";
 
-      const photoUrl = CONFIG.photos[idx % CONFIG.photos.length];
+      const photoUrl = this.thumbUrls[idx % this.thumbUrls.length]
+        || CONFIG.photos[idx % CONFIG.photos.length];
       tile.style.backgroundImage = `url('${photoUrl}')`;
-      tile.style.backgroundSize = "cover";
-      tile.style.backgroundPosition = "center";
-      tile.style.willChange = "transform, opacity";
 
       const targetX = startX + pt[0] * stepX;
       const targetY = startY + pt[1] * stepY;
-
       const rx = (Math.random() - 0.5) * scatterX;
       const ry = (Math.random() - 0.5) * scatterY;
-      const rRot = (Math.random() - 0.5) * (isMobile ? 60 : 100);
+      const rRot = (Math.random() - 0.5) * (PERF.lowEnd ? 30 : 70);
 
       tile.style.left = `${targetX}px`;
       tile.style.top = `${targetY}px`;
-      tile.style.transform = `translate(${rx}px, ${ry}px) rotate(${rRot}deg) scale(0.5)`;
-      tile.style.opacity = "0.6";
+      tile.style.transform = `translate(${rx}px, ${ry}px) rotate(${rRot}deg) scale(${PERF.lowEnd ? 0.7 : 0.5})`;
+      tile.style.opacity = PERF.lowEnd ? "0.75" : "0.6";
+      tile.dataset.rx = String(rx);
+      tile.dataset.ry = String(ry);
+      tile.dataset.rrot = String(rRot);
 
-      tile.dataset.targetX = targetX;
-      tile.dataset.targetY = targetY;
-
-      this.stage.appendChild(tile);
+      frag.appendChild(tile);
       this.tiles.push(tile);
     });
+    this.stage.appendChild(frag);
   }
 
   assemble2010(callback) {
     if (this.isAssembled) return;
     this.isAssembled = true;
 
-    const isMobile = window.innerWidth <= 768;
-    // Mobile: stagger ngắn hơn + ease nhẹ hơn để tránh spike GSAP 46 tween cùng lúc
-    const duration = isMobile ? 0.85 : 1.15;
-    const stagger = isMobile ? 0.012 : 0.02;
-    const ease = isMobile ? "power2.out" : "back.out(1.4)";
-
-    if (window.gsap) {
-      gsap.to(this.tiles, {
-        x: 0,
-        y: 0,
-        rotation: 0,
-        scale: 1,
-        opacity: 1,
-        duration,
-        stagger,
-        ease,
-        overwrite: true,
-        onComplete: () => {
-          // Bỏ will-change sau animate để giảm bộ nhớ layer compositor
-          this.tiles.forEach((t) => { t.style.willChange = "auto"; });
-        }
-      });
-    } else {
-      this.tiles.forEach((tile) => {
-        tile.style.transform = "translate(0,0) rotate(0) scale(1)";
-        tile.style.opacity = "1";
-        tile.style.willChange = "auto";
-      });
-    }
-
     const tooltip = document.getElementById("mosaicTooltipText");
     if (tooltip) tooltip.textContent = "✨ Kỷ niệm ngọt ngào 20/10 đong đầy! 💖";
 
-    const totalDuration = (duration + this.tiles.length * stagger + (isMobile ? 2.4 : 3.2)) * 1000;
-    setTimeout(() => {
-      if (callback) callback();
-    }, totalDuration);
+    // Android low-end: CSS transition theo batch — không dùng GSAP (46 tween rất nặng)
+    if (PERF.mosaicUseCssOnly || !window.gsap) {
+      const batch = PERF.lowEnd ? 8 : 12;
+      this.tiles.forEach((tile, idx) => {
+        const delay = Math.floor(idx / batch) * 40;
+        tile.style.transition = `transform 0.55s ease-out ${delay}ms, opacity 0.4s ease ${delay}ms`;
+        // Force reflow 1 lần/batch đầu
+        if (idx % batch === 0) void tile.offsetWidth;
+        tile.style.transform = "translate(0,0) rotate(0) scale(1)";
+        tile.style.opacity = "1";
+      });
+      const totalDuration = Math.ceil(this.tiles.length / batch) * 40 + 550 + (PERF.lowEnd ? 1600 : 2200);
+      setTimeout(() => { if (callback) callback(); }, totalDuration);
+      return;
+    }
+
+    const duration = PERF.isMobile ? 0.75 : 1.15;
+    const stagger = PERF.isMobile ? 0.01 : 0.02;
+    gsap.to(this.tiles, {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      scale: 1,
+      opacity: 1,
+      duration,
+      stagger,
+      ease: PERF.isMobile ? "power2.out" : "back.out(1.4)",
+      overwrite: true
+    });
+
+    const totalDuration = (duration + this.tiles.length * stagger + (PERF.isMobile ? 2.2 : 3.2)) * 1000;
+    setTimeout(() => { if (callback) callback(); }, totalDuration);
   }
 
   resetTiles() {
     this.isAssembled = false;
+    if (!this.tiles.length) return;
+    const scatterX = PERF.lowEnd ? 120 : 280;
+    const scatterY = PERF.lowEnd ? 80 : 200;
+
     this.tiles.forEach((tile) => {
-      const rx = (Math.random() - 0.5) * 360;
-      const ry = (Math.random() - 0.5) * 260;
-      const rRot = (Math.random() - 0.5) * 100;
-      gsap.killTweensOf(tile);
-      gsap.set(tile, {
-        x: rx,
-        y: ry,
-        rotation: rRot,
-        scale: 0.5,
-        opacity: 0.6
-      });
+      if (window.gsap) gsap.killTweensOf(tile);
+      tile.style.transition = "none";
+      const rx = (Math.random() - 0.5) * scatterX;
+      const ry = (Math.random() - 0.5) * scatterY;
+      const rRot = (Math.random() - 0.5) * (PERF.lowEnd ? 30 : 80);
+      if (window.gsap && !PERF.mosaicUseCssOnly) {
+        gsap.set(tile, { x: rx, y: ry, rotation: rRot, scale: PERF.lowEnd ? 0.7 : 0.5, opacity: 0.7 });
+      } else {
+        tile.style.transform = `translate(${rx}px, ${ry}px) rotate(${rRot}deg) scale(${PERF.lowEnd ? 0.7 : 0.5})`;
+        tile.style.opacity = "0.7";
+      }
     });
   }
 
   updatePhotos(newPhotos) {
-    this.tiles.forEach((tile, idx) => {
-      const url = newPhotos[idx % newPhotos.length];
-      tile.style.backgroundImage = `url('${url}')`;
+    CONFIG.photos = newPhotos.slice();
+    this.prepareThumbnails().then(() => {
+      this.tiles.forEach((tile, idx) => {
+        const url = this.thumbUrls[idx % this.thumbUrls.length] || newPhotos[idx % newPhotos.length];
+        tile.style.backgroundImage = `url('${url}')`;
+      });
     });
   }
 }
@@ -972,7 +1141,7 @@ class ThreeSceneManager {
     this.container = document.getElementById(containerId);
     if (!this.container) return;
 
-    this.isMobile = window.innerWidth <= 768;
+    this.isMobile = PERF.isMobile;
     this.isRendering = false;
     this.animId = null;
 
@@ -998,7 +1167,7 @@ class ThreeSceneManager {
       this.createPhotoSphere();
 
       window.addEventListener("resize", () => this.onWindowResize());
-      console.log(`[ThreeSceneManager] Khởi tạo thành công Scene 3 & 4 (Mobile: ${this.isMobile})`);
+      console.log(`[ThreeSceneManager] OK (mobile=${this.isMobile}, lowEnd=${PERF.lowEnd})`);
     } catch (err) {
       console.error("[ThreeSceneManager] Lỗi khởi tạo Three.js Scene 3:", err);
     }
@@ -1009,15 +1178,21 @@ class ThreeSceneManager {
     const h = window.innerHeight;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x0a0614, 0.0004);
+    if (!PERF.lowEnd) {
+      this.scene.fog = new THREE.FogExp2(0x0a0614, 0.0004);
+    }
 
     this.camera = new THREE.PerspectiveCamera(60, w / h, 1, 2500);
     this.camera.position.set(0, 0, 540);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: PERF.threeAntialias,
+      alpha: true,
+      powerPreference: PERF.lowEnd ? "low-power" : "default",
+      precision: PERF.lowEnd ? "lowp" : "highp"
+    });
     this.renderer.setSize(w, h);
-    // Mobile đặt pixelRatio = 1 để tiết kiệm GPU; Desktop tối đa 2
-    this.renderer.setPixelRatio(this.isMobile ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(PERF.threePixelRatio);
     this.container.appendChild(this.renderer.domElement);
 
     // OrbitControls hỗ trợ xoay 360 độ và zoom, khóa pan để vuốt mượt trên mobile
@@ -1080,9 +1255,9 @@ class ThreeSceneManager {
   createParticleFlower() {
     const glowTex = this.createGlowTexture();
 
-    // 1. ĐĨA THIÊN HÀ XOAY TRÒN DƯỚI ĐẾ (Galaxy Disc): Mobile 400 hạt, Desktop 800 hạt
+    // 1. ĐĨA THIÊN HÀ XOAY TRÒN DƯỚI ĐẾ
     const galaxyGeo = new THREE.BufferGeometry();
-    const galaxyCount = this.isMobile ? 400 : 800;
+    const galaxyCount = PERF.threeGalaxyPts;
     const galaxyPositions = new Float32Array(galaxyCount * 3);
     const galaxyColors = new Float32Array(galaxyCount * 3);
 
@@ -1128,9 +1303,9 @@ class ThreeSceneManager {
     this.galaxyDiscMesh = new THREE.Points(galaxyGeo, galaxyMat);
     this.flowerGroup.add(this.galaxyDiscMesh);
 
-    // 2. BÔNG HOA HỒNG 3D PHÁT SÁNG (Mobile 2.200 hạt, Desktop 4.000 hạt - ROSE PETAL SURFACE EQUATION 60 FPS)
+    // 2. BÔNG HOA HỒNG 3D PHÁT SÁNG
     const flowerGeo = new THREE.BufferGeometry();
-    const totalFlowerParticles = this.isMobile ? 2200 : 4000;
+    const totalFlowerParticles = PERF.threeFlowerPts;
     const positions = new Float32Array(totalFlowerParticles * 3);
     const colors = new Float32Array(totalFlowerParticles * 3);
 
@@ -1236,9 +1411,9 @@ class ThreeSceneManager {
     this.particleFlowerMesh = new THREE.Points(flowerGeo, flowerMat);
     this.flowerGroup.add(this.particleFlowerMesh);
 
-    // 3. HẠT BỤI SÁNG LƠ LỬNG (Ambient Sparkles): Mobile 120 hạt, Desktop 300 hạt
+    // 3. HẠT BỤI SÁNG LƠ LỬNG
     const sparkleGeo = new THREE.BufferGeometry();
-    const sparkleCount = this.isMobile ? 120 : 300;
+    const sparkleCount = PERF.threeSparkles;
     const sparklePositions = new Float32Array(sparkleCount * 3);
     const sparkleColors = new Float32Array(sparkleCount * 3);
 
@@ -1272,80 +1447,71 @@ class ThreeSceneManager {
 
   // Tạo các tấm ảnh và bảng chữ lời chúc phát sáng lơ lửng quanh bông hoa (Tối ưu phóng to 1.6x-2.0x, quỹ đạo gần tâm)
   createFloatingWishes() {
-    // 1. Thẻ chữ lời chúc (Canvas Texture phát sáng độ nét cao, font chữ lớn 14px-16px, viền glow dày)
-    CONFIG.wishes.forEach((wishText, idx) => {
+    const wishList = PERF.lowEnd ? CONFIG.wishes.slice(0, 4) : CONFIG.wishes;
+    const cw = PERF.lowEnd ? 320 : 640;
+    const ch = PERF.lowEnd ? 72 : 140;
+
+    wishList.forEach((wishText, idx) => {
       const canvas = document.createElement("canvas");
-      canvas.width = 640;
-      canvas.height = 140;
+      canvas.width = cw;
+      canvas.height = ch;
       const ctx = canvas.getContext("2d");
 
-      // Nền gradient bóng bẩy màu đêm tím - hồng đậm lãng mạn
-      const grad = ctx.createLinearGradient(0, 0, 640, 140);
+      const grad = ctx.createLinearGradient(0, 0, cw, ch);
       grad.addColorStop(0, "rgba(35, 12, 45, 0.92)");
       grad.addColorStop(1, "rgba(18, 6, 28, 0.92)");
       ctx.fillStyle = grad;
 
-      // Glow effect viền hồng phát sáng neon đậm nét và nổi bật trên nền tối
-      ctx.shadowColor = "#ff2e63";
-      ctx.shadowBlur = 18;
+      if (!PERF.lowEnd) {
+        ctx.shadowColor = "#ff2e63";
+        ctx.shadowBlur = 18;
+      }
       ctx.strokeStyle = "#ff4d79";
-      ctx.lineWidth = 5;
+      ctx.lineWidth = PERF.lowEnd ? 3 : 5;
 
+      const pad = PERF.lowEnd ? 6 : 10;
       if (typeof ctx.roundRect === "function") {
-        ctx.roundRect(10, 10, 620, 120, 28);
+        ctx.roundRect(pad, pad, cw - pad * 2, ch - pad * 2, PERF.lowEnd ? 14 : 28);
       } else {
-        ctx.rect(10, 10, 620, 120);
+        ctx.rect(pad, pad, cw - pad * 2, ch - pad * 2);
       }
       ctx.fill();
       ctx.stroke();
-
-      // Viền sáng viền trong ánh vàng/hồng nhẹ (inner neon highlight)
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = "rgba(255, 215, 0, 0.45)";
-      ctx.lineWidth = 2;
-      if (typeof ctx.roundRect === "function") {
-        ctx.roundRect(14, 14, 612, 112, 24);
-      } else {
-        ctx.rect(14, 14, 612, 112);
-      }
-      ctx.stroke();
 
-      // Tự động căn chỉnh kích thước font chữ lớn rõ nét (30px canvas tương đương 14-16px hiển thị)
-      let fontSize = 30;
-      ctx.font = `bold ${fontSize}px 'Segoe UI', 'Quicksand', sans-serif`;
-      while (ctx.measureText(wishText).width > 560 && fontSize > 20) {
-        fontSize -= 2;
-        ctx.font = `bold ${fontSize}px 'Segoe UI', 'Quicksand', sans-serif`;
+      let fontSize = PERF.lowEnd ? 16 : 30;
+      ctx.font = "bold " + fontSize + "px 'Segoe UI', 'Quicksand', sans-serif";
+      while (ctx.measureText(wishText).width > cw - 40 && fontSize > 12) {
+        fontSize -= 1;
+        ctx.font = "bold " + fontSize + "px 'Segoe UI', 'Quicksand', sans-serif";
       }
 
-      // Chữ phát sáng sắc nét rõ ràng trên nền tối
-      ctx.shadowColor = "#ff3366";
-      ctx.shadowBlur = 14;
+      if (!PERF.lowEnd) {
+        ctx.shadowColor = "#ff3366";
+        ctx.shadowBlur = 14;
+      }
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(wishText, 320, 70);
+      ctx.fillText(wishText, cw / 2, ch / 2);
 
       const texture = new THREE.CanvasTexture(canvas);
       const cardMat = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
-        side: THREE.FrontSide, // Luôn nhìn mặt trước, ẩn mặt sau tránh soi gương
+        side: THREE.FrontSide,
         depthWrite: false
       });
-      // Phóng to kích thước thẻ chứa câu chúc lên 1.6x - 1.8x (Cũ: 55x14 -> Mới: 90x22 / 110x26)
       const cardGeo = this.isMobile ? new THREE.PlaneGeometry(90, 22) : new THREE.PlaneGeometry(110, 26);
       const mesh = new THREE.Mesh(cardGeo, cardMat);
 
-      const angle = (idx / CONFIG.wishes.length) * Math.PI * 2;
-      // Thu hẹp bán kính quỹ đạo đưa vào gần trung tâm hơn (cũ: 120-164 mobile -> mới: 96-114)
+      const angle = (idx / wishList.length) * Math.PI * 2;
       const radius = (this.isMobile ? 96 : 118) + (idx % 2) * (this.isMobile ? 18 : 22);
       mesh.position.set(
         Math.cos(angle) * radius,
         (idx % 4) * 22 - 32,
         Math.sin(angle) * radius
       );
-      // Billboard Mechanism: Hướng trực diện về phía Camera
       mesh.lookAt(this.camera.position);
       mesh.userData = {
         baseY: mesh.position.y,
@@ -1357,11 +1523,13 @@ class ThreeSceneManager {
       this.wishesGroup.add(mesh);
     });
 
-    // 2. Tạo đúng 10 khung ảnh bay lơ lửng quanh bông hoa 3D (Phóng to 1.7x - 2.0x, quỹ đạo gần bông hoa)
+    this.floatingPhotoMeshes = [];
+
+    // Android low-end: bỏ 10 khung ảnh bay (texture JPG rất nặng)
+    if (PERF.lowEnd) return;
+
     const textureLoader = new THREE.TextureLoader();
     textureLoader.setCrossOrigin("anonymous");
-
-    this.floatingPhotoMeshes = [];
 
     PHOTO_LIST.forEach((imgSrc, index) => {
       // Phân bổ góc phi = (index / PHOTO_LIST.length) * Math.PI * 2
@@ -1437,9 +1605,7 @@ class ThreeSceneManager {
   createPhotoSphere() {
     const w = window.innerWidth;
     this.isMobile = w <= 768;
-    // Mobile: 20 thẻ ảnh (4 cột x 5 hàng), Desktop: 40 thẻ ảnh (8 cột x 5 hàng)
-    // Mỗi ảnh trong PHOTO_LIST xuất hiện đều đặn (2 lần trên Mobile, 4 lần trên Desktop)
-    const totalCards = this.isMobile ? 20 : 40;
+    const totalCards = PERF.threeSphereCards;
     const sphereRadius = this.isMobile ? 125 : 155;
     this.sphereCardScale = this.isMobile ? 0.52 : 0.62;
 
@@ -1728,7 +1894,7 @@ class ThreeSceneManager {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(this.isMobile ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(PERF.threePixelRatio);
 
     this.updateGridCoordinates();
 
@@ -1746,6 +1912,8 @@ class ThreeSceneManager {
   startRendering() {
     if (this.isRendering) return;
     this.isRendering = true;
+    this._lastThreeFrame = 0;
+    this._threeFrameBudget = PERF.lowEnd ? 48 : (PERF.isMobile ? 33 : 16);
     this.animate();
   }
 
@@ -1757,12 +1925,16 @@ class ThreeSceneManager {
     }
   }
 
-  animate() {
+  animate(now = 0) {
     if (!this.isRendering) return;
-    this.animId = requestAnimationFrame(() => this.animate());
+    this.animId = requestAnimationFrame((t) => this.animate(t));
+
+    // Android: ~20fps Three.js đủ mượt, giảm nửa fill-rate
+    if (now - (this._lastThreeFrame || 0) < (this._threeFrameBudget || 16)) return;
+    this._lastThreeFrame = now;
 
     try {
-      const time = performance.now() * 0.001;
+      const time = now * 0.001;
 
       // Hiệu ứng Scene 3: Xoay bệ hoa, đĩa ngân hà và bay bổng lời chúc
       if (this.activeSceneMode === 3 && this.flowerGroup && this.flowerGroup.visible) {
@@ -1969,9 +2141,10 @@ class LoveLetterManager {
   }
 
   fireHeartConfetti() {
+    if (PERF.skipConfetti) return;
     if (typeof confetti === "function") {
       confetti({
-        particleCount: 55,
+        particleCount: PERF.isMobile ? 28 : 55,
         spread: 80,
         origin: { y: 0.6 },
         colors: ["#ff4d79", "#ff7597", "#ffa4b8", "#e11d48", "#fbcfe8"]
@@ -2055,8 +2228,9 @@ class AppController {
     return this.threeMgr;
   }
 
-  // Preload Three.js sau khi Scene 2 đã xếp xong — lúc CPU rảnh, không đụng chuyển cảnh 1→2
+  // Preload Three.js sau Scene 2 — Android low-end: KHÔNG preload, chỉ tạo khi vào Scene 3
   scheduleThreePreload() {
+    if (PERF.lowEnd) return;
     if (this._threePreloadScheduled || this.threeMgr) return;
     this._threePreloadScheduled = true;
     const run = () => {
@@ -2067,37 +2241,23 @@ class AppController {
       }
     };
     if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(run, { timeout: 4000 });
+      requestIdleCallback(run, { timeout: 5000 });
     } else {
-      setTimeout(run, 1800);
+      setTimeout(run, 2500);
     }
   }
 
   fireIntroBurst() {
-    if (typeof confetti !== "function") return;
-    const isMobile = window.innerWidth <= 768;
+    if (PERF.skipConfetti || typeof confetti !== "function") return;
     confetti({
-      particleCount: isMobile ? 45 : 90,
-      spread: isMobile ? 80 : 100,
+      particleCount: PERF.isMobile ? 35 : 90,
+      spread: 90,
       origin: { x: 0.5, y: 0.5 },
-      colors: ["#ffd700", "#ff3366", "#f43f5e", "#ffb6c1", "#ffffff"],
-      startVelocity: isMobile ? 28 : 38,
-      gravity: 0.85,
-      ticks: isMobile ? 120 : 200
+      colors: ["#ffd700", "#ff3366", "#f43f5e", "#ffffff"],
+      startVelocity: 30,
+      gravity: 0.9,
+      ticks: PERF.isMobile ? 90 : 200
     });
-    if (!isMobile) {
-      setTimeout(() => {
-        confetti({
-          particleCount: 60,
-          spread: 140,
-          origin: { x: 0.5, y: 0.5 },
-          colors: ["#ffd700", "#ff4d79", "#fbcfe8", "#ffffff"],
-          startVelocity: 28,
-          gravity: 0.9,
-          ticks: 180
-        });
-      }, 100);
-    }
   }
 
   // Kích hoạt hoa hồng nở bung tràn kín 100% màn hình khi chạm vào bất kỳ đâu ở Scene 1
@@ -2105,25 +2265,25 @@ class AppController {
     if (this.s1State !== "waiting") return;
     this.s1State = "exploding";
 
-    // Tự động phát nhạc nền lãng mạn
     this.audioMgr.play();
 
-    // 1. Đối tượng mở đầu phát nổ thành hàng trăm hạt sáng lấp lánh (Particle Burst effect)
+    // Tạm dừng starfield khi nổ hoa — tránh 2 canvas tranh GPU trên Android
+    if (this.starfield) this.starfield.pause();
+
     this.fireIntroBurst();
 
-    // 2. Ẩn hoàn toàn đối tượng mở đầu sau khi click
     const introObj = document.getElementById("s1IntroObject");
     if (introObj) {
       introObj.classList.add("bursting");
       setTimeout(() => {
         introObj.classList.add("hidden");
-      }, 400);
+      }, PERF.lowEnd ? 200 : 400);
     }
 
-    // 3. Ngay sau đó (trong vòng 0.3 giây), hiệu ứng lốc xoáy hoa hồng nở tràn kín màn hình mới bắt đầu chạy bùng nổ từ tâm ra ngoài
+    // Android: bắt đầu nổ ngay, không chờ 300ms
     setTimeout(() => {
       this.flowerEngine.startExplosion();
-    }, 300);
+    }, PERF.lowEnd ? 80 : 250);
   }
 
   // Chuyển mượt từ Scene 1 sang Scene 2 khi chạm lần nữa
@@ -2134,9 +2294,18 @@ class AppController {
     const continueHint = document.getElementById("s1ContinueHint");
     if (continueHint) continueHint.classList.add("hidden");
 
+    // Giữ starfield pause đến khi Scene 2 ổn định
+    if (this.starfield) this.starfield.pause();
+
     this.flowerEngine.fadeOutToScene2(() => {
       this.s1State = "done";
       this.goToScene(2);
+      // Low-end: starfield tĩnh đã paintOnce; máy mạnh mới resume twinkle
+      if (this.starfield && !PERF.lowEnd) {
+        setTimeout(() => this.starfield.resume(), 400);
+      } else if (this.starfield) {
+        this.starfield.resume();
+      }
     });
   }
 
@@ -2380,5 +2549,7 @@ class AppController {
 
 // Khởi chạy toàn bộ ứng dụng khi DOM sẵn sàng
 document.addEventListener("DOMContentLoaded", () => {
+  if (PERF.lowEnd) document.documentElement.classList.add("perf-low");
+  if (PERF.isAndroid) document.documentElement.classList.add("perf-android");
   window.app = new AppController();
 });
