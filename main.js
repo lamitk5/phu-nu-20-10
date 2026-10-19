@@ -280,6 +280,7 @@ class CanvasFlowerEngine {
     this.width = window.innerWidth;
     this.height = window.innerHeight;
     this.isMobile = window.innerWidth <= 768;
+    // Mobile: pixel ratio cố định 1 để tiết kiệm GPU
     this.dpr = this.isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
 
     this.offscreenImages = [];
@@ -292,6 +293,10 @@ class CanvasFlowerEngine {
     this.fadeStartTime = 0;
     this.fadeDuration = 1150;
     this.animId = null;
+
+    // Frame-throttle: mobile giới hạn ~30 FPS để tiết kiệm GPU
+    this._lastFrameTime = 0;
+    this._frameBudget = this.isMobile ? 32 : 16; // ms per frame (30fps / 60fps)
 
     this.handleResize = this.handleResize.bind(this);
     this.animate = this.animate.bind(this);
@@ -315,6 +320,8 @@ class CanvasFlowerEngine {
   }
 
   handleResize() {
+    this.isMobile = window.innerWidth <= 768;
+    this._frameBudget = this.isMobile ? 32 : 16;
     this.initCanvas();
     if (this.state === "idle") {
       this.initBouquet();
@@ -333,12 +340,13 @@ class CanvasFlowerEngine {
       img.onload = () => {
         if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) return;
 
-        // Kích thước offscreen đủ lớn cho hoa 180px - 360px
-        const size = 400;
+        // Mobile: 200px offscreen đủ cho hiển thị 150px-260px, tiết kiệm VRAM 4x so với 400px
+        const size = this.isMobile ? 200 : 320;
         const offCanvas = document.createElement("canvas");
         offCanvas.width = size;
         offCanvas.height = size;
-        const offCtx = offCanvas.getContext("2d");
+        // willReadFrequently: false vì chúng ta chỉ vẽ không đọc — tối ưu GPU raster path
+        const offCtx = offCanvas.getContext("2d", { willReadFrequently: false });
 
         // Đồng bộ tone màu ấm áp tươi tắn
         if ("filter" in offCtx) {
@@ -346,7 +354,7 @@ class CanvasFlowerEngine {
         }
 
         // object-fit: contain giữ chuẩn tỷ lệ cánh hoa gốc, không méo hình
-        const pad = 12;
+        const pad = this.isMobile ? 6 : 10;
         const maxDraw = size - pad * 2;
         const aspect = img.naturalWidth / img.naturalHeight;
         let dw, dh;
@@ -360,11 +368,10 @@ class CanvasFlowerEngine {
         const dx = (size - dw) / 2;
         const dy = (size - dh) / 2;
 
-        // Đổ bóng mềm tự nhiên - KHÔNG clip tròn, KHÔNG lẹm cánh
-        offCtx.shadowColor = "rgba(0, 0, 0, 0.15)";
-        offCtx.shadowBlur = 12;
-        offCtx.shadowOffsetX = 0;
-        offCtx.shadowOffsetY = 4;
+        // Đổ bóng nhẹ - KHÔNG clip tròn, KHÔNG lẹm cánh
+        offCtx.shadowColor = "rgba(0, 0, 0, 0.12)";
+        offCtx.shadowBlur = this.isMobile ? 6 : 10;
+        offCtx.shadowOffsetY = 3;
         offCtx.drawImage(img, dx, dy, dw, dh);
 
         this.offscreenImages[idx] = offCanvas;
@@ -391,89 +398,68 @@ class CanvasFlowerEngine {
     const cx = this.width / 2;
     const cy = this.height / 2;
 
-    // Vòng 1 (Tâm): 4 bông hoa r = 0..22px, kích thước 160-190px
-    for (let i = 0; i < 4; i++) {
-      const angle = (i / 4) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-      const r = Math.random() * 22;
-      this.bouquetRoses.push({
-        imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        size: 165 + Math.random() * 25,
-        rot: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.003
-      });
-    }
+    // Mobile: giảm số bông bouquet từ 18 xuống 8 để giảm drawImage mỗi frame
+    const rings = this.isMobile
+      ? [{ count: 2, maxR: 0 }, { count: 3, maxR: 40 }, { count: 3, maxR: 70 }]
+      : [{ count: 4, maxR: 0 }, { count: 6, maxR: 60 }, { count: 8, maxR: 100 }];
 
-    // Vòng 2 (Trung gian): 6 bông hoa r = 50..75px, kích thước 150-180px
-    for (let i = 0; i < 6; i++) {
-      const angle = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-      const r = 50 + Math.random() * 25;
-      this.bouquetRoses.push({
-        imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        size: 155 + Math.random() * 25,
-        rot: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.003
-      });
-    }
-
-    // Vòng 3 (Vành ngoài): 8 bông hoa r = 85..115px, kích thước 140-170px
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-      const r = 85 + Math.random() * 30;
-      this.bouquetRoses.push({
-        imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        size: 145 + Math.random() * 25,
-        rot: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.003
-      });
-    }
+    rings.forEach(({ count, maxR }) => {
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+        const r = Math.random() * maxR;
+        const size = this.isMobile ? 130 + Math.random() * 30 : 155 + Math.random() * 30;
+        this.bouquetRoses.push({
+          imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
+          x: cx + Math.cos(angle) * r,
+          y: cy + Math.sin(angle) * r,
+          size,
+          rot: Math.random() * Math.PI * 2,
+          rotSpeed: (Math.random() - 0.5) * 0.003
+        });
+      }
+    });
   }
 
-  // 2. MẬT ĐỘ VÀ KÍCH THƯỚC PHỦ KÍN 100% MÀN HÌNH (160 - 220 BÔNG, SIZE 180PX - 360PX)
-  // Các bông hoa nở từ tâm tỏa đều ra các hướng theo vòng tròn đồng tâm mở rộng dần,
-  // lớp hoa sau nở đè lên mép lớp hoa trước (overlapping) che kín hoàn toàn không gian.
+  // 2. MẬT ĐỘ VÀ KÍCH THƯỚC PHỦ KÍN 100% MÀN HÌNH
   initExplosion() {
     this.explosionRoses = [];
     const cx = this.width / 2;
     const cy = this.height / 2;
-    // maxR mở rộng ra ngoài góc màn hình để phủ kín tuyệt đối 4 góc
     const maxR = Math.hypot(cx, cy) * 1.08;
 
     const desktopRings = [
-      { count: 1,  rFrac: 0.00 }, // Tâm chính diện
-      { count: 6,  rFrac: 0.09 }, // Vòng 1
-      { count: 11, rFrac: 0.18 }, // Vòng 2
-      { count: 16, rFrac: 0.28 }, // Vòng 3
-      { count: 21, rFrac: 0.39 }, // Vòng 4
-      { count: 26, rFrac: 0.51 }, // Vòng 5
-      { count: 30, rFrac: 0.64 }, // Vòng 6
-      { count: 32, rFrac: 0.77 }, // Vòng 7
-      { count: 32, rFrac: 0.90 }, // Vòng 8
-      { count: 25, rFrac: 1.04 }  // Vòng 9 (Phủ kín góc và mép rìa)
+      { count: 1,  rFrac: 0.00 },
+      { count: 6,  rFrac: 0.09 },
+      { count: 11, rFrac: 0.18 },
+      { count: 16, rFrac: 0.28 },
+      { count: 21, rFrac: 0.39 },
+      { count: 26, rFrac: 0.51 },
+      { count: 30, rFrac: 0.64 },
+      { count: 32, rFrac: 0.77 },
+      { count: 32, rFrac: 0.90 },
+      { count: 25, rFrac: 1.04 }
     ];
 
+    // Mobile: giảm từ 96 xuống còn 62 bông — đủ phủ kín, tăng đáng kể FPS
     const mobileRings = [
       { count: 1,  rFrac: 0.00 },
-      { count: 5,  rFrac: 0.14 },
-      { count: 9,  rFrac: 0.28 },
-      { count: 15, rFrac: 0.46 },
-      { count: 20, rFrac: 0.66 },
-      { count: 24, rFrac: 0.88 },
-      { count: 22, rFrac: 1.05 }
+      { count: 4,  rFrac: 0.14 },
+      { count: 8,  rFrac: 0.28 },
+      { count: 12, rFrac: 0.44 },
+      { count: 15, rFrac: 0.62 },
+      { count: 13, rFrac: 0.82 },
+      { count: 9,  rFrac: 1.02 }
     ];
 
     const rings = this.isMobile ? mobileRings : desktopRings;
     const totalRings = rings.length;
 
+    // Mobile: nở nhanh hơn trong 2s (cũ 2350ms) để người dùng không thấy lag delay
+    const totalBloomMs = this.isMobile ? 1900 : 2350;
+
     rings.forEach((ring, ringIdx) => {
       const ringOffsetAngle = Math.random() * Math.PI * 2;
-      // Stagger delay nở từ tâm ra ngoài theo vòng đồng tâm trong 2.4s đầu, kéo dài đến 3.5s
-      const ringDelay = (ringIdx / (totalRings - 1)) * 2350;
+      const ringDelay = (ringIdx / (totalRings - 1)) * totalBloomMs;
 
       for (let j = 0; j < ring.count; j++) {
         const angle = ring.count === 1
@@ -482,32 +468,35 @@ class CanvasFlowerEngine {
 
         const r = ring.rFrac === 0
           ? 0
-          : ring.rFrac * maxR + (Math.random() - 0.5) * (this.isMobile ? 14 : 22);
+          : ring.rFrac * maxR + (Math.random() - 0.5) * (this.isMobile ? 12 : 20);
 
         const targetX = cx + Math.cos(angle) * r;
         const targetY = cy + Math.sin(angle) * r;
 
-        // Kích thước hoa: Mobile tinh chỉnh 150px - 260px, Desktop 180px - 360px
+        // Mobile: kích thước 150px-240px (giảm từ 260px) để vẽ nhanh hơn
         const size = this.isMobile
-          ? Math.floor(150 + Math.random() * 110)
+          ? Math.floor(150 + Math.random() * 90)
           : Math.floor(180 + Math.random() * 180);
 
-        // Góc xoay ngẫu nhiên rotate(0deg) đến rotate(360deg)
         const rot = Math.random() * Math.PI * 2;
+        // Mobile: rút thời gian mỗi bông nở từ 850-1000ms xuống 620-780ms
+        const duration = this.isMobile
+          ? 600 + Math.random() * 150
+          : 850 + Math.random() * 150;
 
-        const flowerDelay = Math.max(0, ringDelay + (Math.random() - 0.5) * 140);
-        const duration = 850 + Math.random() * 150; // Khoảng 850ms - 1000ms mỗi bông nở nảy nhẹ
+        // Jitter delay nhỏ hơn trên mobile để các vòng nở nhanh liền mạch
+        const flowerDelay = Math.max(0, ringDelay + (Math.random() - 0.5) * (this.isMobile ? 80 : 140));
 
         this.explosionRoses.push({
-          ringIndex: ringIdx,
           imgIdx: Math.floor(Math.random() * this.offscreenImages.length),
           x: targetX,
           y: targetY,
           targetSize: size,
-          rot: rot,
-          rotSpeed: (Math.random() - 0.5) * 0.003, // Quay chậm tự nhiên sau khi nở
+          rot,
+          // Lưu sẵn rotSpeed nhân sẵn 0.04 để tránh nhân lại mỗi frame
+          rotRate: (Math.random() - 0.5) * 0.003 * 0.04,
           delay: flowerDelay,
-          duration: duration
+          duration
         });
       }
     });
@@ -521,10 +510,11 @@ class CanvasFlowerEngine {
     this.initExplosion();
     this.startLoop();
 
-    // Sau 3.5 giây hoa đã phủ kín 100% màn hình, kích hoạt gợi ý tiếp tục
+    // Mobile nở nhanh hơn: onFullCoverage sau 2.4s (cũ 3.5s)
+    const coverageDelay = this.isMobile ? 2400 : 3500;
     setTimeout(() => {
       if (this.onFullCoverage) this.onFullCoverage();
-    }, 3500);
+    }, coverageDelay);
   }
 
   // 3. Tan biến sang Scene 2: Mờ dần (opacity -> 0) và phóng to nhẹ trong 1.15s, sau đó dọn dẹp canvas
@@ -548,6 +538,7 @@ class CanvasFlowerEngine {
 
   reset() {
     this.state = "idle";
+    this._lastFrameTime = 0;
     if (this.canvas) {
       this.canvas.style.display = "block";
     }
@@ -572,6 +563,13 @@ class CanvasFlowerEngine {
   animate(now) {
     if (this.state === "hidden") return;
 
+    // Frame throttle: bỏ qua frame nếu chưa đủ budget thời gian (mobile ~30fps)
+    if (now - this._lastFrameTime < this._frameBudget) {
+      this.animId = requestAnimationFrame(this.animate);
+      return;
+    }
+    this._lastFrameTime = now;
+
     this.animId = requestAnimationFrame(this.animate);
 
     this.ctx.clearRect(0, 0, this.width, this.height);
@@ -594,19 +592,20 @@ class CanvasFlowerEngine {
         this.ctx.restore();
       }
 
-      // Vẽ các vòng hoa đồng tâm nở dần từ trong ra ngoài, lớp sau đè lên mép lớp trước (overlapping)
+      // Vẽ các vòng hoa đồng tâm nở dần từ trong ra ngoài
       for (const r of this.explosionRoses) {
         if (elapsed < r.delay) continue;
         const progress = Math.min(1, (elapsed - r.delay) / r.duration);
 
-        // Easing cubic-bezier(0.25, 1, 0.5, 1) phóng to nảy nhẹ transform: scale(0) -> scale(1)
+        // Easing cubic-bezier(0.25, 1, 0.5, 1) phóng to nảy nhẹ
         const c1 = 1.15;
         const c3 = c1 + 1;
         const scale = progress >= 1 ? 1 : Math.max(0, 1 + c3 * Math.pow(progress - 1, 3) + c1 * Math.pow(progress - 1, 2));
         const curSize = r.targetSize * scale;
         if (curSize <= 0) continue;
 
-        const curRot = r.rot + r.rotSpeed * (elapsed * 0.04);
+        // rotRate đã nhân sẵn 0.04 để tránh phép nhân mỗi frame
+        const curRot = r.rot + r.rotRate * elapsed;
         const off = this.offscreenImages[r.imgIdx];
         if (!off) continue;
 
@@ -640,7 +639,8 @@ class CanvasFlowerEngine {
         const curSize = r.targetSize * expandScale;
         this.ctx.save();
         this.ctx.translate(r.x, r.y);
-        this.ctx.rotate(r.rot + r.rotSpeed * (now * 0.04));
+        // rotRate đã nhân sẵn 0.04
+        this.ctx.rotate(r.rot + r.rotRate * now);
         this.ctx.drawImage(off, -curSize / 2, -curSize / 2, curSize, curSize);
         this.ctx.restore();
       }
