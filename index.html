@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Món Quà 20/10 — Không Gian Tương Tác 3D</title>
+  <meta name="description" content="Trải nghiệm web 3D đa phân cảnh chúc mừng ngày Phụ nữ Việt Nam 20/10">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Great+Vibes&family=Montserrat:wght@400;500;600;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Core Libraries: Three.js r128, OrbitControls, GSAP, Canvas-Confetti -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Starfield background canvas -->
+  <canvas id="universeCanvas"></canvas>
+
+  <!-- Global Audio Player -->
+  <audio id="bgAudio" loop preload="auto"></audio>
+
+  <!-- Top Navigation & Floating Controls -->
+  <header class="app-nav">
+    <div class="nav-brand">
+      <span class="brand-heart">🌸</span>
+      <span class="brand-title">20/10 Yêu Thương</span>
+    </div>
+
+    <!-- Scene Selector Pills -->
+    <nav class="scene-dock" aria-label="Điều hướng phân cảnh">
+      <button class="scene-dock-btn active" data-scene="1" title="Cảnh 1: Vũ Trụ & Hoa Nở">1</button>
+      <button class="scene-dock-btn" data-scene="2" title="Cảnh 2: Lịch & Trái Tim Ghép Ảnh">2</button>
+      <button class="scene-dock-btn" data-scene="3" title="Cảnh 3: Hoa Ánh Sáng 3D">3</button>
+      <button class="scene-dock-btn" data-scene="4" title="Cảnh 4: Quả Cầu & Tường Ảnh">4</button>
+      <button class="scene-dock-btn" data-scene="5" title="Cảnh 5: Phong Bì Thư">5</button>
+      <button class="scene-dock-btn" data-scene="6" title="Cảnh 6: Bức Thư Tình Yêu">6</button>
+    </nav>
+
+    <!-- Audio Toggle -->
+    <button id="audioToggleBtn" class="audio-toggle-btn" title="Bật / Tắt Âm Nhạc">
+      <span class="music-icon">🎵</span>
+      <span class="sound-bars">
+        <i></i><i></i><i></i><i></i>
+      </span>
+    </button>
+  </header>
+
+  <!-- Quick Floating Next/Prev Arrow Navigation -->
+  <aside class="quick-nav">
+    <button id="prevSceneBtn" class="nav-arrow-btn" title="Cảnh trước">‹</button>
+    <button id="nextSceneBtn" class="nav-arrow-btn" title="Cảnh sau">›</button>
+  </aside>
+
+  <!-- ==================== SCENE 1: VŨ TRỤ & HOA HỒNG NỞ TRÀN MÀN HÌNH ==================== -->
+  <section id="scene1" class="scene active">
+    <!-- Glowing light vortex at bottom -->
+    <div class="cosmic-vortex" aria-hidden="true"></div>
+
+    <!-- Single High-Performance HTML5 2D Canvas for all flower rendering -->
+    <canvas id="flowerCanvas"></canvas>
+
+    <!-- Interactive Intro Object: 3D Magic Glowing Gift Box & Breathing Aura -->
+    <div class="s1-intro-container" id="s1IntroObject">
+      <div class="magic-gift-wrapper" id="magicGiftBox" role="button" aria-label="Mở quà 20/10" tabindex="0">
+        <div class="gift-halo-glow"></div>
+        <div class="gift-floating-sparkles" aria-hidden="true">
+          <span class="sparkle-star s1">✦</span>
+          <span class="sparkle-star s2">✨</span>
+          <span class="sparkle-star s3">★</span>
+          <span class="sparkle-star s4">💖</span>
+          <span class="sparkle-star s5">✨</span>
+          <span class="sparkle-star s6">✦</span>
+        </div>
+
+        <!-- 3D Magic Gift Box -->
+        <div class="gift-3d-box">
+          <!-- Lid with Bow -->
+          <div class="gift-lid">
+            <div class="gift-ribbon-bow">
+              <span class="bow-wing left"></span>
+              <span class="bow-wing right"></span>
+              <span class="bow-heart">❤</span>
+            </div>
+            <div class="ribbon-band lid-v"></div>
+            <div class="ribbon-band lid-h"></div>
+          </div>
+          <!-- Box Body -->
+          <div class="gift-body">
+            <div class="ribbon-band body-v"></div>
+            <div class="ribbon-band body-h"></div>
+            <div class="gift-tag-badge">
+              <span class="tag-icon">🎁</span>
+              <span class="tag-text">20/10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hint text below intro object -->
+      <div id="s1TapHint" class="s1-intro-hint">
+        <span class="intro-hint-text">✨ Chạm để mở quà 20/10 ✨</span>
+      </div>
+    </div>
+
+    <!-- Subtle Bottom Tap Hint (Full-screen Tap to Continue after bloom) -->
+    <div id="s1ContinueHint" class="s1-tap-hint s1-next-hint hidden">
+      <span class="tap-hint-text">Chạm vào màn hình để tiếp tục 💖</span>
+    </div>
+  </section>
+
+
+  <!-- ==================== SCENE 2: THIỆP LỊCH THÁNG 10 & MẢNH GHÉP ẢNH 20/10 ==================== -->
+  <section id="scene2" class="scene">
+    <div class="neon-calendar-card">
+      <!-- Title at top: Anh ❤️ Em -->
+      <div class="card-header-love">
+        <h2 class="love-title">
+          <span>Anh</span>
+          <span class="beating-heart-icon">❤️</span>
+          <span>Em</span>
+        </h2>
+        <div class="mosaic-tooltip">
+          <span class="sparkle-icon">✨</span>
+          <span id="mosaicTooltipText">✨ Kỷ niệm 20/10 đong đầy! 💖</span>
+        </div>
+      </div>
+
+      <!-- Center: 20/10 Dot Matrix Photo Mosaic -->
+      <div class="mosaic-2010-wrapper">
+        <div id="mosaic2010Container" class="mosaic-2010-stage">
+          <!-- 45 photo tiles generated dynamically into '2', '0', '/', '1', '0' -->
+        </div>
+      </div>
+
+      <!-- Bottom Card Section: October Calendar & Action -->
+      <div class="card-bottom-calendar-strip">
+        <div class="calendar-compact-box">
+          <div class="calendar-header-compact">
+            <span class="cursive-handwrite-small">Happy Women's Day</span>
+            <span class="calendar-month-badge">October 2026</span>
+          </div>
+          <table class="october-calendar-compact">
+            <thead>
+              <tr>
+                <th>S</th><th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th>S</th>
+              </tr>
+            </thead>
+            <tbody id="calendarDaysBody">
+              <!-- Days generated dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="scene2-action-box">
+          <div class="calendar-note-pill">
+            <span class="heart-badge-mini">20</span>
+            <span class="note-text">Ngày quốc tế phụ nữ</span>
+          </div>
+          <button id="s2NextBtn" class="pill-btn gold-neon-btn">
+            <span>Khám phá không gian 3D</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom row of swaying colorful mini flowers -->
+      <div class="swaying-garden-strip" id="swayingGarden">
+        <!-- SVG flowers swaying softly -->
+      </div>
+    </div>
+
+    <!-- Subtle Bottom Tap Hint for Scene 2 (Full-screen Tap to Scene 3) -->
+    <div id="s2TapHint" class="s2-tap-hint hidden">
+      <span class="tap-hint-text">✨ Chạm vào màn hình để tiếp tục ✨</span>
+    </div>
+  </section>
+
+  <!-- ==================== THREE.JS CANVAS CONTAINER (SCENE 3 & 4) ==================== -->
+  <div id="threeCanvasContainer" class="three-viewport hidden">
+    <!-- Overlay UI for Scene 3 -->
+    <div id="s3OverlayUI" class="scene-overlay hidden">
+      <div class="scene-badge">
+        <span class="badge-dot"></span>
+        <span>Không Gian Bông Hoa Ánh Sáng & Lời Chúc</span>
+      </div>
+      <p class="orbit-hint">✨ Dùng chuột / ngón tay để xoay 360° và phóng to thu nhỏ</p>
+      <button id="s3NextBtn" class="pill-btn pink-glow bottom-action">
+        <span>Đến Quả Cầu Ảnh 3D</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+    <!-- Overlay UI for Scene 4 -->
+    <div id="s4OverlayUI" class="scene-overlay hidden">
+      <div class="scene-badge">
+        <span class="badge-dot"></span>
+        <span id="s4ModeBadge">Quả Cầu Kỷ Niệm 3D</span>
+      </div>
+      <p class="orbit-hint" id="s4Hint">💫 Chạm vào quả cầu để biến hình thành Tường Lưới Ảnh</p>
+      <div class="s4-btn-group bottom-action">
+        <button id="s4MorphBtn" class="pill-btn outline-pink">
+          <span id="s4MorphText">Xếp thành Tường Ảnh</span>
+        </button>
+        <button id="s4NextBtn" class="pill-btn pink-glow">
+          <span>Mở Phong Bì Thư</span>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCENE 5: PHONG BÌ THƯ TÌNH YÊU ==================== -->
+  <section id="scene5" class="scene">
+    <!-- Floating mini polaroids on ground / bottom backdrop -->
+    <div class="floating-polaroids-backdrop" id="s5PolaroidsBackdrop"></div>
+
+    <div class="envelope-scene-wrapper envelope-wrapper">
+      <p class="envelope-guide">💌 Có một bức thư đặc biệt dành riêng cho mi ...</p>
+      
+      <!-- Interactive 3D Envelope -->
+      <div class="envelope-container" id="loveEnvelope">
+        <div class="envelope-back"></div>
+        <div class="letter-preview" id="envelopeLetter">
+          <div class="letter-preview-line short"></div>
+          <div class="letter-preview-line"></div>
+          <div class="letter-preview-line"></div>
+          <div class="letter-preview-heart">❤️</div>
+        </div>
+        <div class="envelope-front pocket"></div>
+        <div class="envelope-flap flap" id="envelopeFlap">
+          <div class="wax-seal seal" id="envelopeSeal">
+            <span class="seal-heart">❤</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="click-seal-hint">✨ Chạm vào phong bì để mở thư ✨</p>
+    </div>
+  </section>
+
+  <!-- ==================== SCENE 6: BỨC THƯ TAY CHẠY CHỮ ==================== -->
+  <section id="scene6" class="scene">
+    <!-- Blurred photo collage background -->
+    <div class="letter-backdrop-blur" id="letterBackdropBlur"></div>
+
+    <!-- Double-panel / folded stitched love card -->
+    <div class="stitched-letter-card">
+      <div class="card-inner-border">
+        <!-- Top Title: Gửi em ! -->
+        <h2 class="letter-recipient">Gửi cu !</h2>
+
+        <!-- Typewriter Letter Body -->
+        <div class="letter-content-box">
+          <p id="typewriterText" class="typewriter-body"></p>
+          <span class="typewriter-cursor">|</span>
+        </div>
+
+        <!-- Footer: Bunny on left, Handwritten signature on right -->
+        <div class="letter-card-footer">
+          <div class="bunny-mascot">
+            <svg class="bunny-svg" viewBox="0 0 100 100" width="60" height="60">
+              <!-- Bunny head and ears -->
+              <ellipse cx="38" cy="25" rx="7" ry="20" fill="#ffffff" stroke="#ffb6c1" stroke-width="2"/>
+              <ellipse cx="38" cy="25" rx="4" ry="14" fill="#ffccd5"/>
+              <ellipse cx="62" cy="25" rx="7" ry="20" fill="#ffffff" stroke="#ffb6c1" stroke-width="2"/>
+              <ellipse cx="62" cy="25" rx="4" ry="14" fill="#ffccd5"/>
+              <circle cx="50" cy="55" r="30" fill="#ffffff" stroke="#ffb6c1" stroke-width="2"/>
+              <!-- Cheeks -->
+              <ellipse cx="34" cy="58" rx="5" ry="3" fill="#ffccd5"/>
+              <ellipse cx="66" cy="58" rx="5" ry="3" fill="#ffccd5"/>
+              <!-- Eyes -->
+              <circle cx="40" cy="50" r="3" fill="#2d3748"/>
+              <circle cx="60" cy="50" r="3" fill="#2d3748"/>
+              <!-- Nose and mouth -->
+              <polygon points="50,56 47,53 53,53" fill="#ff7597"/>
+              <path d="M47 57 Q50 61 53 57" stroke="#2d3748" stroke-width="1.5" fill="none"/>
+              <!-- Little heart bunny is holding -->
+              <path d="M50 72 C46 66 38 68 38 74 C38 80 50 87 50 87 C50 87 62 80 62 74 C62 68 54 66 50 72 Z" fill="#ff4d79"/>
+            </svg>
+            <span class="bunny-heart-pop">💖</span>
+          </div>
+
+          <div class="signature-block">
+            <p class="signature-text">Thân ái</p>
+            <span class="signature-author"> Tiểu lam lam <span class="sig-heart">❤️</span></span>
+          </div>
+        </div>
+
+        <!-- Action bar at bottom: Replay letter, Confetti, Start over -->
+        <div class="letter-actions">
+          <button id="skipTypewriterBtn" class="mini-btn">Tua nhanh chữ</button>
+          <button id="confettiHeartsBtn" class="mini-btn special">Bắn tim 💖</button>
+          <button id="restartJourneyBtn" class="mini-btn primary">Xem lại từ đầu 🔄</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main logic script -->
+  <script src="main.js"></script>
+</body>
+</html>
